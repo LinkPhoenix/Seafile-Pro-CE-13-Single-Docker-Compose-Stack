@@ -1,0 +1,303 @@
+# Seafile Pro 13 - Unified stack (server, SeaDoc, notification, metadata, thumbnail)
+# Traefik network: traefik-net (reverse proxy)
+# Storage: disk (local volumes)
+
+services:
+  db:
+    image: ${SEAFILE_DB_IMAGE:-mariadb:10.11}
+    container_name: seafile-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-}
+      - MYSQL_LOG_CONSOLE=true
+      - MARIADB_AUTO_UPGRADE=1
+    volumes:
+      - "${SEAFILE_MYSQL_VOLUME:-/opt/seafile-mysql/db}:/var/lib/mysql"
+    networks:
+      - seafile-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/healthcheck.sh",
+          "--connect",
+          "--mariadbupgrade",
+          "--innodb_initialized",
+        ]
+      interval: 20s
+      start_period: 30s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: ${SEAFILE_REDIS_IMAGE:-redis}
+    container_name: seafile-redis
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - redis-server --requirepass "$$REDIS_PASSWORD"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    networks:
+      - seafile-net
+
+  seafile:
+    image: ${SEAFILE_IMAGE:-seafileltd/seafile-pro-mc:13.0-latest}
+    container_name: seafile
+    restart: unless-stopped
+    volumes:
+      - ${SEAFILE_VOLUME:-/opt/seafile-data}:/shared
+    environment:
+      - INIT_SEAFILE_MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-}
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - SEAFILE_MYSQL_DB_SEAHUB_DB_NAME=${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      - TIME_ZONE=${TIME_ZONE:-Etc/UTC}
+      - INIT_SEAFILE_ADMIN_EMAIL=${INIT_SEAFILE_ADMIN_EMAIL:-me@example.com}
+      - INIT_SEAFILE_ADMIN_PASSWORD=${INIT_SEAFILE_ADMIN_PASSWORD:-asecret}
+      - SEAFILE_SERVER_HOSTNAME=${SEAFILE_SERVER_HOSTNAME:?Variable is not set or empty}
+      - SEAFILE_SERVER_PROTOCOL=${SEAFILE_SERVER_PROTOCOL:-https}
+      - SITE_ROOT=${SITE_ROOT:-/}
+      - NON_ROOT=${NON_ROOT:-false}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - ENABLE_GO_FILESERVER=${ENABLE_GO_FILESERVER:-true}
+      - ENABLE_SEADOC=${ENABLE_SEADOC:-true}
+      - SEADOC_SERVER_URL=${SEAFILE_SERVER_PROTOCOL:-https}://${SEAFILE_SERVER_HOSTNAME:?Variable is not set or empty}/sdoc-server
+      - CACHE_PROVIDER=${CACHE_PROVIDER:-redis}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - MEMCACHED_HOST=${MEMCACHED_HOST:-memcached}
+      - MEMCACHED_PORT=${MEMCACHED_PORT:-11211}
+      - SEAF_SERVER_STORAGE_TYPE=${SEAF_SERVER_STORAGE_TYPE:-disk}
+      - S3_COMMIT_BUCKET=${S3_COMMIT_BUCKET:-}
+      - S3_FS_BUCKET=${S3_FS_BUCKET:-}
+      - S3_BLOCK_BUCKET=${S3_BLOCK_BUCKET:-}
+      - S3_KEY_ID=${S3_KEY_ID:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_USE_V4_SIGNATURE=${S3_USE_V4_SIGNATURE:-true}
+      - S3_AWS_REGION=${S3_AWS_REGION:-us-east-1}
+      - S3_HOST=${S3_HOST:-}
+      - S3_USE_HTTPS=${S3_USE_HTTPS:-true}
+      - S3_PATH_STYLE_REQUEST=${S3_PATH_STYLE_REQUEST:-false}
+      - S3_SSE_C_KEY=${S3_SSE_C_KEY:-}
+      - ENABLE_NOTIFICATION_SERVER=${ENABLE_NOTIFICATION_SERVER:-true}
+      - INNER_NOTIFICATION_SERVER_URL=${INNER_NOTIFICATION_SERVER_URL:-http://notification-server:8083}
+      - NOTIFICATION_SERVER_URL=${NOTIFICATION_SERVER_URL:-${SEAFILE_SERVER_PROTOCOL:-https}://${SEAFILE_SERVER_HOSTNAME:?Variable is not set or empty}/notification}
+      - ENABLE_SEAFILE_AI=${ENABLE_SEAFILE_AI:-false}
+      - SEAFILE_AI_SERVER_URL=${SEAFILE_AI_SERVER_URL:-http://seafile-ai:8888}
+      - SEAFILE_AI_SECRET_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - MD_FILE_COUNT_LIMIT=${MD_FILE_COUNT_LIMIT:-100000}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
+    healthcheck:
+      # Query Seahub directly (port 8000) to avoid failure due to Nginx HTTP→HTTPS
+      # redirect on port 80 (curl -f fails after redirect).
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api2/ping/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - seafile-net
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APP_NAME}.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME}.tls=true"
+      - "traefik.http.routers.${APP_NAME}.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${APP_NAME}.priority=1"
+      - "traefik.http.routers.${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}.service=${APP_NAME}"
+      - "traefik.http.middlewares.${APP_NAME}-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.${APP_NAME}.middlewares=${APP_NAME}-headers"
+      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=80"
+
+  seadoc:
+    image: ${SEADOC_IMAGE:-seafileltd/sdoc-server:2.0-latest}
+    container_name: seadoc
+    restart: unless-stopped
+    volumes:
+      - ${SEADOC_VOLUME:-/opt/seadoc-data}:/shared
+    environment:
+      - DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - DB_NAME=${SEADOC_MYSQL_DB_NAME:-${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}}
+      - TIME_ZONE=${TIME_ZONE:-Etc/UTC}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - NON_ROOT=${NON_ROOT:-false}
+      - SEAHUB_SERVICE_URL=${SEAFILE_SERVICE_URL:-http://seafile}
+    depends_on:
+      db:
+        condition: service_healthy
+      seafile:
+        condition: service_healthy
+    networks:
+      - seafile-net
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      # Route /sdoc-server -> seadoc (strip prefix)
+      - "traefik.http.routers.${APP_NAME}-seadoc.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME}-seadoc.tls=true"
+      - "traefik.http.routers.${APP_NAME}-seadoc.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/sdoc-server`)"
+      - "traefik.http.routers.${APP_NAME}-seadoc.priority=10"
+      - "traefik.http.routers.${APP_NAME}-seadoc.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}-seadoc.service=seadoc"
+      - "traefik.http.routers.${APP_NAME}-seadoc.middlewares=${APP_NAME}-seadoc-strip"
+      - "traefik.http.middlewares.${APP_NAME}-seadoc-strip.stripprefixregex.regex=^/sdoc-server/?"
+      # Route /socket.io -> seadoc (websocket, no strip)
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.tls=true"
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.priority=10"
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}-seadoc-ws.service=seadoc"
+      - "traefik.http.services.seadoc.loadbalancer.server.port=80"
+
+  notification-server:
+    image: ${NOTIFICATION_SERVER_IMAGE:-seafileltd/notification-server:13.0-latest}
+    container_name: notification-server
+    restart: always
+    volumes:
+      - ${SEAFILE_VOLUME:-/opt/seafile-data}/seafile/logs:/shared/seafile/logs
+    environment:
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - NOTIFICATION_SERVER_LOG_LEVEL=${NOTIFICATION_SERVER_LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+      seafile:
+        condition: service_healthy
+    networks:
+      - seafile-net
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APP_NAME}-notification.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME}-notification.tls=true"
+      - "traefik.http.routers.${APP_NAME}-notification.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/notification`)"
+      - "traefik.http.routers.${APP_NAME}-notification.priority=10"
+      - "traefik.http.routers.${APP_NAME}-notification.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}-notification.service=notification-server"
+      - "traefik.http.services.notification-server.loadbalancer.server.port=8083"
+
+  seafile-md-server:
+    image: ${MD_IMAGE:-seafileltd/seafile-md-server:13.0-latest}
+    container_name: seafile-md-server
+    restart: unless-stopped
+    volumes:
+      - ${SEAFILE_VOLUME:-/opt/seafile-data}:/shared
+    environment:
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - MD_PORT=${MD_PORT:-8084}
+      - MD_LOG_LEVEL=${MD_LOG_LEVEL:-info}
+      - MD_MAX_CACHE_SIZE=${MD_MAX_CACHE_SIZE:-1GB}
+      - MD_CHECK_UPDATE_INTERVAL=${MD_CHECK_UPDATE_INTERVAL:-30m}
+      - MD_FILE_COUNT_LIMIT=${MD_FILE_COUNT_LIMIT:-100000}
+      - SEAF_SERVER_STORAGE_TYPE=${SEAF_SERVER_STORAGE_TYPE:-disk}
+      - MD_STORAGE_TYPE=${MD_STORAGE_TYPE:-disk}
+      - S3_COMMIT_BUCKET=${S3_COMMIT_BUCKET:-}
+      - S3_FS_BUCKET=${S3_FS_BUCKET:-}
+      - S3_BLOCK_BUCKET=${S3_BLOCK_BUCKET:-}
+      - S3_MD_BUCKET=${S3_MD_BUCKET:-}
+      - S3_HOST=${S3_HOST:-}
+      - S3_AWS_REGION=${S3_AWS_REGION:-}
+      - S3_USE_HTTPS=${S3_USE_HTTPS:-true}
+      - S3_PATH_STYLE_REQUEST=${S3_PATH_STYLE_REQUEST:-false}
+      - S3_KEY_ID=${S3_KEY_ID:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_USE_V4_SIGNATURE=${S3_USE_V4_SIGNATURE:-true}
+      - S3_SSE_C_KEY=${S3_SSE_C_KEY:-}
+      - CACHE_PROVIDER=${CACHE_PROVIDER:-redis}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      seafile:
+        condition: service_healthy
+    networks:
+      - seafile-net
+
+  thumbnail-server:
+    image: ${THUMBNAIL_SERVER_IMAGE:-seafileltd/thumbnail-server:13.0-latest}
+    container_name: thumbnail-server
+    restart: always
+    volumes:
+      - ${SEAFILE_VOLUME:-/opt/seafile-data}:/shared
+    environment:
+      - TIME_ZONE=${TIME_ZONE:-Etc/UTC}
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - NON_ROOT=${NON_ROOT:-false}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - SITE_ROOT=${SITE_ROOT:-/}
+      - INNER_SEAHUB_SERVICE_URL=${INNER_SEAHUB_SERVICE_URL:-http://seafile}
+      - THUMBNAIL_IMAGE_ORIGINAL_SIZE_LIMIT=${THUMBNAIL_IMAGE_ORIGINAL_SIZE_LIMIT:-256}
+      - SEAF_SERVER_STORAGE_TYPE=${SEAF_SERVER_STORAGE_TYPE:-disk}
+      - S3_COMMIT_BUCKET=${S3_COMMIT_BUCKET:-}
+      - S3_FS_BUCKET=${S3_FS_BUCKET:-}
+      - S3_BLOCK_BUCKET=${S3_BLOCK_BUCKET:-}
+      - S3_KEY_ID=${S3_KEY_ID:-}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_USE_V4_SIGNATURE=${S3_USE_V4_SIGNATURE:-true}
+      - S3_AWS_REGION=${S3_AWS_REGION:-us-east-1}
+      - S3_HOST=${S3_HOST:-}
+      - S3_USE_HTTPS=${S3_USE_HTTPS:-true}
+      - S3_PATH_STYLE_REQUEST=${S3_PATH_STYLE_REQUEST:-false}
+      - S3_SSE_C_KEY=${S3_SSE_C_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      seafile:
+        condition: service_healthy
+    networks:
+      - seafile-net
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.tls=true"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/thumbnail`)"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.priority=10"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}-thumbnail.service=thumbnail-server"
+      - "traefik.http.services.thumbnail-server.loadbalancer.server.port=80"
+
+networks:
+  seafile-net:
+    name: seafile-net
+  traefik-net:
+    external: true

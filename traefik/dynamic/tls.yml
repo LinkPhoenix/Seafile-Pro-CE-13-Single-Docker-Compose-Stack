@@ -1,0 +1,103 @@
+# TLS configuration with modern security standards
+# Enhanced cipher suites and security options for 2025
+
+tls:
+  options:
+    # Modern TLS configuration (TLS 1.3 only) - Recommended for new services
+    modern:
+      minVersion: VersionTLS13
+      maxVersion: VersionTLS13
+      cipherSuites:
+        # TLS 1.3 cipher suites (order matters for performance)
+        - TLS_AES_256_GCM_SHA384      # Strongest encryption
+        - TLS_AES_128_GCM_SHA256      # Good performance/security balance
+        - TLS_CHACHA20_POLY1305_SHA256 # Good for mobile/ARM devices
+      sniStrict: true
+
+    # Intermediate TLS configuration (TLS 1.2 + 1.3) - For compatibility
+    intermediate:
+      minVersion: VersionTLS12
+      maxVersion: VersionTLS13
+      cipherSuites:
+        # TLS 1.3 suites
+        - TLS_AES_256_GCM_SHA384
+        - TLS_AES_128_GCM_SHA256
+        - TLS_CHACHA20_POLY1305_SHA256
+        # TLS 1.2 secure suites
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      sniStrict: true
+      # Disable client certificate authentication by default
+      clientAuth:
+        caFiles: []
+        clientAuthType: NoClientCert
+
+    # Legacy configuration (for older clients) - Use sparingly
+    legacy:
+      minVersion: VersionTLS11
+      maxVersion: VersionTLS13
+      cipherSuites:
+        # Include more cipher suites for compatibility
+        - TLS_AES_256_GCM_SHA384
+        - TLS_AES_128_GCM_SHA256
+        - TLS_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+      sniStrict: false
+
+    # Mail servers TLS configuration (for SMTP/IMAP/POP3)
+    mail-tls:
+      minVersion: VersionTLS12
+      maxVersion: VersionTLS13
+      cipherSuites:
+        # Prioritize modern suites but keep compatibility
+        - TLS_AES_256_GCM_SHA384
+        - TLS_AES_128_GCM_SHA256
+        - TLS_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      sniStrict: false  # Mail clients may not support SNI properly
+
+# TLS challenge configuration
+# Note: This should be in your static configuration (traefik.yml)
+# but included here for completeness
+certificatesResolvers:
+  cloudflare:
+    acme:
+      keyType: EC256  # Use ECDSA for better performance
+      email: "admin@example.com"
+      storage: "/acme/acme.json"
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
+        propagationTimeout: 120s
+        delayBeforeCheck: 30s
+      # Enable renewal notifications
+      caServer: "https://acme-v02.api.letsencrypt.org/directory"
+
+  # Backup certificate resolver using HTTP challenge
+  letsencrypt-http:
+    acme:
+      keyType: EC256
+      email: "admin@example.com"
+      storage: "/acme/acme-http.json"
+      httpChallenge:
+        entryPoint: web

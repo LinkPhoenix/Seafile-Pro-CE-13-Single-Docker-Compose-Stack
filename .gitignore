@@ -1,0 +1,6 @@
+# Local environment (never commit real secrets)
+.env
+
+# Optional: uncomment if you keep sensitive overrides in a second file
+# .env.local
+# .env.*.local
