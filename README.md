@@ -1,4 +1,4 @@
-# ☁️ Seafile Pro 13 🐳 Single Docker Compose Stack
+# ☁️ Seafile Pro & CE 13 🐳 Single Docker Compose Stack
 
 A production-ready **Seafile Professional Edition 13** deployment using a **single `docker-compose.yml`**, behind **Traefik** (not Caddy) with **Cloudflare** for TLS and DNS.
 
