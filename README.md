@@ -27,8 +27,8 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
   - [Access and admin](#5️⃣-access-and-admin)
 - [Suggested services (optional)](#️-suggested-services-optional)
 - [Seafile Community Edition 13 (CE) — very lightweight](#-seafile-community-edition-13-ce)
+- [Going further](#-going-further)
 - [Contributing](#-contributing)
-- [To-Do](#-to-do)
 
 ---
 
@@ -278,9 +278,15 @@ Contributions are welcome.
 
 ---
 
-## 📌 To-Do
+## 🔗 Going further
 
-- [ ] Improve the usage process in this README (step-by-step, optional checks).
-- [ ] Add ClamAV for virus scanning (optional service + config).
-- [ ] Provide a script to adjust configuration (e.g. enable/disable WebDAV, SeaDoc, notification) based on user choices.
-- [x] Add configuration variant for **Seafile Community Edition (CE) 13** — see section below.
+For users who want to go further with Seafile 13 configuration:
+
+| Topic | Official documentation |
+|-------|------------------------|
+| **S3 storage** | [Setup with S3](https://manual.seafile.com/13.0/setup/setup_with_s3/) |
+| **Ceph backend** | [Setup with Ceph](https://manual.seafile.com/13.0/setup/setup_with_ceph/) |
+| **Multiple storage backends** | [Setup with multiple storage backends](https://manual.seafile.com/13.0/setup/setup_with_multiple_storage_backends/) |
+| **Seafile AI** | [Seafile AI setup](https://manual.seafile.com/13.0/extension/seafile-ai/) |
+| **Antivirus scan (ClamAV)** | [Virus scan with ClamAV](https://manual.seafile.com/13.0/extension/virus_scan_with_clamav/) — *Pro edition only* |
+| **Elasticsearch** | [Deploying Elasticsearch](https://manual.seafile.com/13.0/setup_binary/installation/?h=elastic#deploying-elasticsearch) |
