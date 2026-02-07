@@ -9,8 +9,14 @@ SECRET_KEY = 'your-secret-key-change-in-production'
 # ---------------------------------------------------------------------------
 # Security - cookies and hosts (HTTPS via Traefik)
 # ---------------------------------------------------------------------------
+##########################################################################
+################ IMPORTANT: UPDATE THIS WITH YOUR DOMAIN #################
+##########################################################################
 # Include 127.0.0.1 / localhost / seafile for Docker healthcheck and internal calls
 # (otherwise curl http://127.0.0.1:8000/api2/ping/ returns 400 and container stays unhealthy)
+##########################################################################
+################ IMPORTANT: UPDATE THIS WITH YOUR DOMAIN #################
+##########################################################################
 ALLOWED_HOSTS = [
     '.example.com',
     '.seafile.example.com',
@@ -67,8 +73,8 @@ FORCE_PASSWORD_CHANGE = False
 # ---------------------------------------------------------------------------
 TIME_ZONE = 'Europe/Paris'
 LANGUAGE_CODE = 'en'
-SITE_NAME = 'Seafile'
-SITE_TITLE = 'Seafile'
+SITE_NAME = 'Seafile Pro'
+SITE_TITLE = 'Seafile Pro'
 
 # SeaDoc (no Collabora) - Wiki enabled
 ENABLE_WIKI = True

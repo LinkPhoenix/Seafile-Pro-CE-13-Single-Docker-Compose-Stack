@@ -1,4 +1,4 @@
-# ☁️ Seafile Pro 13 🐳 Single Docker Compose Stack
+﻿# ☁️ Seafile Pro 13 🐳 Single Docker Compose Stack
 
 A production-ready **Seafile Professional Edition 13** deployment using a **single `docker-compose.yml`**, behind **Traefik** (not Caddy) with **Cloudflare** for TLS and DNS.
 
@@ -23,43 +23,19 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 | ⚡ **Redis** | Cache / sessions |
 | 📝 **SeaDoc** | Online editing (sdoc) |
 | 🔔 **Notification server** | Real-time notifications |
-| 📊 **Metadata server** | File metadata / indexing (no Elasticsearch in this setup) |
+| 📊 **Metadata server** | File metadata / indexing |
 | 🖼️ **Thumbnail server** | Image thumbnails |
+| 🔍 **SeaSearch** | Full-text search (replaces Elasticsearch) |
 
-**Current scope (no extra services in this config):**
+**Current scope:**
 
-- ❌ No **Elasticsearch** (full-text search is disabled; SeaSearch can be added later).
+- ✅ **SeaSearch** is included for full-text search (see [Configure SeaSearch](#configure-seasearch-full-text-search) below).
 - ❌ No **ClamAV** (virus scanning is disabled).
 
 ---
 
 ## 📁 Project structure
 
-```
-.
-├── docker-compose.yml      # Single compose: db, redis, seafile, seadoc, notification, md, thumbnail
-├── .env.example            # Template for environment variables (copy to .env)
-├── conf/                   # Seafile configs to apply after first run
-│   ├── gunicorn.conf.py
-│   ├── seafdav.conf
-│   ├── seafevents.conf
-│   ├── seafile.conf
-│   └── seahub_settings.py
-├── traefik/                # Traefik configuration (certificates, TLS, providers)
-│   ├── Traefik.yml
-│   └── dynamic/
-│       ├── security.yml
-│       └── tls.yml
-└── original_docker_compose/ # Reference compose fragments this stack was based on
-    ├── 00-seafile-server.yml
-    ├── 01-seadoc.yml
-    ├── 02-notification-server.yml
-    ├── 03-metadata-server.yml
-    ├── 04-thumbnail-server.yml
-    ├── 05-seafile-ai.yml
-    ├── 06-collabora.yml
-    └── 07-litllm.yml
-```
 
 - 📂 **`conf/`** — Copy (or mount) these into your Seafile data directory after the first startup so email, WebDAV, 2FA, and other options match your environment.
 - 🔐 **`traefik/`** — Example Traefik setup; adapt to your own Traefik instance and Cloudflare (or other DNS) if needed.
@@ -92,6 +68,7 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
   - **`JWT_PRIVATE_KEY`** — Generate a secret, e.g. `openssl rand -hex 32`.
   - **Database and Redis** — Set `SEAFILE_MYSQL_DB_PASSWORD`, `REDIS_PASSWORD`, `INIT_SEAFILE_MYSQL_ROOT_PASSWORD`, `INIT_SEAFILE_ADMIN_EMAIL`, `INIT_SEAFILE_ADMIN_PASSWORD` (and any other required vars).
   - **Email** — If you use Seahub email, set `EMAIL_HOST_PASSWORD` (and ensure `conf/seahub_settings.py` matches your SMTP host/user).
+- **SeaSearch** — If you use SeaSearch, set the token in `conf/seafevents.conf` and optionally `INIT_SS_ADMIN_USER` / `INIT_SS_ADMIN_PASSWORD` in `.env` (see [Configure SeaSearch](#configure-seasearch-full-text-search)).
 
 ### 2️⃣ Configure Traefik
 
@@ -116,7 +93,7 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 - Copy (or bind-mount) the contents of this repo’s **`conf/`** into that directory so that:
   - **`seahub_settings.py`** — Email, ALLOWED_HOSTS, CSRF, WebDAV secret, 2FA, etc.
   - **`seafile.conf`** — Fileserver options.
-  - **`seafevents.conf`** — Events, statistics, file history (no Elasticsearch in this example).
+  - **`seafevents.conf`** — Events, statistics, file history, SeaSearch (indexation).
   - **`seafdav.conf`** — WebDAV enable/disable and port.
   - **`gunicorn.conf.py`** — Gunicorn settings for Seahub.
 - Exact target path depends on your volume layout (e.g. `$SEAFILE_VOLUME/seafile/conf`). See [Seafile Docker docs](https://manual.seafile.com/13.0/setup/setup_ce_by_docker/) for your image’s layout.
@@ -124,6 +101,90 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
   ```bash
   docker compose restart seafile
   ```
+
+#### Small VPS (low RAM)
+
+If you run Seafile on a **small VPS** with limited RAM, edit **`conf/seafile.conf`** and adjust these options (all under `[fileserver]`). The repo’s `seafile.conf` is already tuned for low memory; below are the values used and their **defaults** for reference.
+
+| Option | Default | Edition | Purpose |
+|--------|---------|---------|--------|
+| `worker_threads` | `10` | CE & Pro | Number of HTTP worker threads. Lower value reduces RAM (e.g. `6`). |
+| `fs_cache_limit` | `2000` (2 GB, in MB) | CE & Pro | Go fileserver in-memory fs cache. Reduce (e.g. `500`) on a small VPS. |
+| `fs_id_list_max_threads` | `10` | **Pro only** (since 12.0.10) | Max concurrent fs-id-list handlers (sync). Lower (e.g. `5`) to reduce RAM. Omit or remove in Community Edition. |
+
+If you use MySQL in this stack and configure it in `seafile.conf`, you can also set **`max_connections`** in the `[database]` section (default `100`); e.g. `30` or `20` for a small server.
+
+After changing `seafile.conf`, restart the Seafile container so the new values take effect. See [Seafile 13.0 — seafile.conf (Go Fileserver)](https://manual.seafile.com/13.0/config/seafile-conf/#go-fileserver) for full details.
+
+#### Configure SeaSearch (full-text search)
+
+The stack includes **SeaSearch** for full-text search. To get indexing and search working:
+
+1. **SeaSearch credentials in `.env`**
+
+   - **Simple option (same account as Seafile admin)** — In `.env` use:
+     ```bash
+     INIT_SS_ADMIN_USER=$INIT_SEAFILE_ADMIN_EMAIL
+     INIT_SS_ADMIN_PASSWORD=$INIT_SEAFILE_ADMIN_PASSWORD
+     ```
+     The SeaSearch password will then always match the one set at deployment for the Seafile admin.
+
+   - **Custom option** — Set a dedicated SeaSearch user and password:
+     ```bash
+     INIT_SS_ADMIN_USER=seasearch-admin@example.com
+     INIT_SS_ADMIN_PASSWORD=your_seasearch_password
+     ```
+     Use **these** values to generate the token (next step).
+
+2. **Generate the auth token**
+
+   The token is **base64** of `username:password` (the same credentials used for SeaSearch in `.env`).
+
+   - On Linux/macOS:
+     ```bash
+     echo -n "your_email:your_password" | base64
+     ```
+   - On PowerShell (Windows):
+     ```powershell
+     [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("your_email:your_password"))
+     ```
+   Use `INIT_SEAFILE_ADMIN_EMAIL:INIT_SEAFILE_ADMIN_PASSWORD` if you chose the simple option, otherwise `INIT_SS_ADMIN_USER:INIT_SS_ADMIN_PASSWORD`.
+
+3. **Configure `conf/seafevents.conf`**
+
+   - Keep **`[INDEX FILES]`** with **`enabled = false`** (this disables the old Elasticsearch-based indexing).
+   - In **`[SEASEARCH]`** set **`enabled = true`** and replace `<your auth token>` with the base64 token you generated:
+     ```ini
+     [INDEX FILES]
+     enabled = false
+
+     [SEASEARCH]
+     enabled = true
+     seasearch_url = http://seasearch:4080
+     seasearch_token = <paste_your_base64_token_here>
+     interval = 30m
+     ```
+   Then restart the Seafile container (and seafevents if you run it separately):
+   ```bash
+   docker compose restart seafile
+   ```
+
+4. **Force the first indexing (without waiting 10 minutes)**
+
+   By default, indexing may run on a schedule (e.g. every 10 minutes). To run the **first indexing immediately** in Docker:
+
+   ```bash
+   docker exec -it seafile bash
+   cd /opt/seafile/seafile-server-latest
+   ./pro/pro.py search --update
+   exit
+   ```
+
+   Once indexing finishes, file search will be available in the interface.
+
+5. **Indexing interval (small or low-usage environments)**
+
+   For low-usage or small setups, it is recommended to **increase** `interval` in `[SEASEARCH]` (and optionally in `[SEAHUB EMAIL]`), e.g. `interval = 30m` or more. The provided `conf/seafevents.conf` already uses `30m` for SeaSearch. For heavier use you can set `10m` for more frequent search updates.
 
 ### 5️⃣ Access and admin
 
@@ -161,6 +222,5 @@ Contributions are welcome.
 
 - [ ] Improve the usage process in this README (step-by-step, optional checks).
 - [ ] Add ClamAV for virus scanning (optional service + config).
-- [ ] Add Elasticsearch for full-text search.
 - [ ] Provide a script to adjust configuration (e.g. enable/disable WebDAV, SeaDoc, notification) based on user choices.
 - [ ] Add configuration variant for **Seafile Community Edition (CE) 13** and more.

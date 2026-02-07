@@ -96,13 +96,11 @@ services:
       - MD_FILE_COUNT_LIMIT=${MD_FILE_COUNT_LIMIT:-100000}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
     healthcheck:
-      # Query Seahub directly (port 8000) to avoid failure due to Nginx HTTP→HTTPS
-      # redirect on port 80 (curl -f fails after redirect).
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api2/ping/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 45s
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
@@ -295,6 +293,46 @@ services:
       - "traefik.http.routers.${APP_NAME}-thumbnail.entrypoints=websecure"
       - "traefik.http.routers.${APP_NAME}-thumbnail.service=thumbnail-server"
       - "traefik.http.services.thumbnail-server.loadbalancer.server.port=80"
+
+  seasearch:
+    image: ${SEASEARCH_IMAGE:-seafileltd/seasearch:1.0-latest}
+    container_name: seafile-seasearch
+    restart: unless-stopped
+    volumes:
+      - ${SS_DATA_PATH:-/opt/seasearch-data}:/opt/seasearch/data
+    environment:
+      - SS_FIRST_ADMIN_USER=${INIT_SS_ADMIN_USER:-}
+      - SS_FIRST_ADMIN_PASSWORD=${INIT_SS_ADMIN_PASSWORD:-}
+      - SS_MAX_OBJ_CACHE_SIZE=${SS_MAX_OBJ_CACHE_SIZE:-10GB}
+      - SS_STORAGE_TYPE=${SS_STORAGE_TYPE:-disk}
+      - S3_SS_BUCKET=${S3_SS_BUCKET:-}
+      - S3_KEY_ID=${S3_KEY_ID:-}
+      - S3_USE_V4_SIGNATURE=${S3_USE_V4_SIGNATURE:-true}
+      - S3_SECRET_KEY=${S3_SECRET_KEY:-}
+      - S3_HOST=${S3_HOST:-}
+      - S3_USE_HTTPS=${S3_USE_HTTPS:-true}
+      - S3_PATH_STYLE_REQUEST=${S3_PATH_STYLE_REQUEST:-true}
+      - S3_AWS_REGION=${S3_AWS_REGION:-us-east-1}
+      - S3_SSE_C_KEY=${S3_SSE_C_KEY:-}
+      - SS_LOG_TO_STDOUT=${SS_LOG_TO_STDOUT:-false}
+      - SS_LOG_DIR=${SS_LOG_DIR:-/opt/seasearch/data/log}
+      - SS_LOG_LEVEL=${SS_LOG_LEVEL:-info}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - SEATABLE_LOG_TO_STDOUT=${SEATABLE_LOG_TO_STDOUT:-false}
+      - SS_SERVER_MODE=${SS_SERVER_MODE:-}
+      - SS_CLUSTER_ID=${SS_CLUSTER_ID:-}
+      - SS_CLUSTER_PROXY_HOST=${SS_CLUSTER_PROXY_HOST:-0.0.0.0}
+      - SS_CLUSTER_PROXY_PORT=${SS_CLUSTER_PROXY_PORT:-4082}
+      - SS_CLUSTER_MANAGER_ADDR=${SS_CLUSTER_MANAGER_ADDR:-127.0.0.1:4081}
+      - SS_ETCD_USERNAME=${SS_ETCD_USERNAME:-}
+      - SS_ETCD_PASSWORD=${SS_ETCD_PASSWORD:-}
+      - SS_ETCD_ENDPOINTS=${SS_ETCD_ENDPOINTS:-127.0.0.1:2379}
+      - SS_ETCD_PREFIX=${SS_ETCD_PREFIX:-/zinc}
+      - SS_CLUSTER_PROXY_LOG_DIR=${SS_CLUSTER_PROXY_LOG_DIR:-/opt/seasearch/data/log}
+      - SS_CLUSTER_MANAGER_HOST=${SS_CLUSTER_MANAGER_HOST:-0.0.0.0}
+      - SS_CLUSTER_MANAGER_PORT=${SS_CLUSTER_MANAGER_PORT:-4081}
+    networks:
+      - seafile-net
 
 networks:
   seafile-net:
