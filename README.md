@@ -1,4 +1,4 @@
-﻿# ☁️ Seafile Pro 13 🐳 Single Docker Compose Stack
+# ☁️ Seafile Pro 13 🐳 Single Docker Compose Stack
 
 A production-ready **Seafile Professional Edition 13** deployment using a **single `docker-compose.yml`**, behind **Traefik** (not Caddy) with **Cloudflare** for TLS and DNS.
 
@@ -9,6 +9,26 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 - [Official forum](https://forum.seafile.com/) — Community support and discussions  
 - [Official setup documentation](https://manual.seafile.com/latest/setup/overview/) — Installation and configuration overview  
 - [Extensions (e.g. SeaDoc)](https://manual.seafile.com/latest/extension/setup_seadoc/) — Extra components and online editing
+
+---
+
+## 📑 Index
+
+- [Tech stack](#-tech-stack)
+- [Project structure](#-project-structure)
+- [Prerequisites](#-prerequisites)
+- [Usage](#-usage)
+  - [Configure environment variables](#1️⃣-configure-environment-variables)
+  - [Configure Traefik](#2️⃣-configure-traefik)
+  - [First launch](#3️⃣-first-launch)
+  - [Apply configuration from `conf/`](#4️⃣-apply-configuration-from-conf)
+  - [Small VPS (low RAM)](#small-vps-low-ram)
+  - [Configure SeaSearch (full-text search)](#configure-seasearch-full-text-search)
+  - [Access and admin](#5️⃣-access-and-admin)
+- [Suggested services (optional)](#️-suggested-services-optional)
+- [Seafile Community Edition 13 (CE) — very lightweight](#-seafile-community-edition-13-ce)
+- [Contributing](#-contributing)
+- [To-Do](#-to-do)
 
 ---
 
@@ -38,6 +58,7 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 
 
 - 📂 **`conf/`** — Copy (or mount) these into your Seafile data directory after the first startup so email, WebDAV, 2FA, and other options match your environment.
+- 📂 **`conf-CE/`** — Configuration files for **Seafile Community Edition 13** when using `docker-compose-CE.yml` (see [Seafile CE 13](#-seafile-community-edition-13-ce) below).
 - 🔐 **`traefik/`** — Example Traefik setup; adapt to your own Traefik instance and Cloudflare (or other DNS) if needed.
 - 📜 **`original_docker_compose/`** — Original per-service compose files used as reference; this repo uses one merged `docker-compose.yml` instead.
 
@@ -50,7 +71,10 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 - ☁️ **Cloudflare** (or another DNS provider) for your domain, if using the provided TLS/ACME setup
 - 📜 Seafile Pro license (*ONLY if required by your use case*)
 
-**Hardware (official Seafile Pro recommendations):** 4 cores, 4 GB RAM. For **personal use** without Elasticsearch, you can often run with less; adjust to your load. Personally, for personal use, I have a 4vcore and 8GB at Hetzner with lots of other Docker stacks.
+**Hardware (official recommendations):**
+
+- **Pro** ([setup pro](https://manual.seafile.com/13.0/setup/setup_pro_by_docker/)): at least **4 GB RAM** and a **4-core CPU** (> 2 GHz).
+- **CE** ([setup CE](https://manual.seafile.com/13.0/setup/setup_ce_by_docker/)): at least **2 GB RAM** and a **2-core CPU** (> 2 GHz). See [Seafile CE 13 (CE)](#-seafile-community-edition-13-ce) for the lite stack.
 
 ---
 
@@ -104,7 +128,9 @@ Good, complete Seafile configurations are hard to find. This repo provides one u
 
 #### Small VPS (low RAM)
 
-If you run Seafile on a **small VPS** with limited RAM, edit **`conf/seafile.conf`** and adjust these options (all under `[fileserver]`). The repo’s `seafile.conf` is already tuned for low memory; below are the values used and their **defaults** for reference.
+**Tip:** For **personal use** (CE or Pro), you can reduce RAM by tuning the options below—the repo’s `conf/seafile.conf` and `conf-CE/seafile.conf` are already tuned for low memory. **CE** can run with less than the official 2 GB; **Pro** with less than 4 GB (e.g. without Elasticsearch, moderate sync). Some parameters in the table are **Pro only**; on Community Edition, use only `worker_threads` and `fs_cache_limit`, and omit or remove `fs_id_list_max_threads`.
+
+If you run Seafile on a **small VPS** with limited RAM, edit **`conf/seafile.conf`** (Pro) or **`conf-CE/seafile.conf`** (CE) and adjust these options (all under `[fileserver]`). Below are the values used and their **defaults** for reference.
 
 | Option | Default | Edition | Purpose |
 |--------|---------|---------|--------|
@@ -208,6 +234,40 @@ These are suggestions only; other providers and tools work fine.
 
 ---
 
+## 🐧 Seafile Community Edition 13 (CE)
+
+This repo also provides a **very lightweight** **Community Edition** stack for Seafile 13, based on the [official CE Docker setup](https://manual.seafile.com/13.0/setup/setup_ce_by_docker/). No Pro license required.
+
+**Why “lite”?** Only three services run: **database**, **Redis**, and **Seafile**. There are no extra containers (SeaDoc, notification server, metadata server, thumbnail server, SeaSearch). That means lower RAM/CPU usage and a simpler setup—ideal for a small server or testing.
+
+| Included (CE lite) | Not included |
+|--------------------|--------------|
+| Seafile server, Seahub, fileserver | SeaDoc (online editing) |
+| MariaDB, Redis | Notification server (real-time) |
+| WebDAV, 2FA, email, stats, file history | Metadata server |
+| Traefik integration | Thumbnail server |
+| | SeaSearch (full-text search) |
+
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| **`docker-compose-CE.yml`** | Compose for CE: `db`, `redis`, `seafile` only. |
+| **`.env-ce.example`** | Example environment variables for CE. Copy to `.env-ce` and edit. |
+| **`conf-CE/`** | Config files for CE: `seafile.conf`, `seafevents.conf`, `seahub_settings.py`, `gunicorn.conf.py`, `seafdav.conf`. |
+
+**Usage:**
+
+1. Copy the CE env file: `cp .env-ce.example .env-ce`
+2. Edit **`.env-ce`**: set `SEAFILE_SERVER_HOSTNAME`, `JWT_PRIVATE_KEY`, `SEAFILE_MYSQL_DB_PASSWORD`, `INIT_SEAFILE_MYSQL_ROOT_PASSWORD`, `INIT_SEAFILE_ADMIN_EMAIL`, `INIT_SEAFILE_ADMIN_PASSWORD`.
+3. Start the stack:  
+   `docker compose -f docker-compose-CE.yml --env-file .env-ce up -d`
+4. After first start, copy (or mount) **`conf-CE/`** into your Seafile data directory (e.g. `SEAFILE_VOLUME/seafile/conf/`) and adjust domain/email in `seahub_settings.py`.
+
+CE uses the image `seafileltd/seafile-mc:13.0-latest` and the network `seafile-ce-net`; Traefik labels use `APP_NAME_CE` (default `seafile-ce`) so you can run CE alongside Pro on the same host with different hostnames.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome.
@@ -223,4 +283,4 @@ Contributions are welcome.
 - [ ] Improve the usage process in this README (step-by-step, optional checks).
 - [ ] Add ClamAV for virus scanning (optional service + config).
 - [ ] Provide a script to adjust configuration (e.g. enable/disable WebDAV, SeaDoc, notification) based on user choices.
-- [ ] Add configuration variant for **Seafile Community Edition (CE) 13** and more.
+- [x] Add configuration variant for **Seafile Community Edition (CE) 13** — see section below.

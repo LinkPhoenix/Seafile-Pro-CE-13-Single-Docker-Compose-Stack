@@ -1,0 +1,108 @@
+# Seafile Community Edition 13 - Docker Compose
+# Based on: https://manual.seafile.com/13.0/setup/setup_ce_by_docker/
+# Stack: db, redis, seafile (no SeaDoc, no notification-server, no metadata, no thumbnail, no SeaSearch)
+# Use with: docker compose -f docker-compose-CE.yml --env-file .env-ce up -d
+
+services:
+  db:
+    image: ${SEAFILE_DB_IMAGE:-mariadb:10.11}
+    container_name: seafile-ce-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-}
+      - MYSQL_LOG_CONSOLE=true
+      - MARIADB_AUTO_UPGRADE=1
+    volumes:
+      - "${SEAFILE_MYSQL_VOLUME:-/opt/seafile-mysql/db}:/var/lib/mysql"
+    networks:
+      - seafile-ce-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/healthcheck.sh",
+          "--connect",
+          "--mariadbupgrade",
+          "--innodb_initialized",
+        ]
+      interval: 20s
+      start_period: 30s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: ${SEAFILE_REDIS_IMAGE:-redis}
+    container_name: seafile-ce-redis
+    restart: unless-stopped
+    # Optional: set Redis password via .env REDIS_PASSWORD and uncomment below
+    # command:
+    #   - /bin/sh
+    #   - -c
+    #   - redis-server --requirepass "$${REDIS_PASSWORD:?Variable is not set or empty}"
+    networks:
+      - seafile-ce-net
+
+  seafile:
+    image: ${SEAFILE_IMAGE:-seafileltd/seafile-mc:13.0-latest}
+    container_name: seafile-ce
+    restart: unless-stopped
+    volumes:
+      - ${SEAFILE_VOLUME:-/opt/seafile-data}:/shared
+    environment:
+      - INIT_SEAFILE_MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-}
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:?Variable is not set or empty}
+      - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - SEAFILE_MYSQL_DB_SEAHUB_DB_NAME=${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      - TIME_ZONE=${TIME_ZONE:-Etc/UTC}
+      - INIT_SEAFILE_ADMIN_EMAIL=${INIT_SEAFILE_ADMIN_EMAIL:-me@example.com}
+      - INIT_SEAFILE_ADMIN_PASSWORD=${INIT_SEAFILE_ADMIN_PASSWORD:-asecret}
+      - SEAFILE_SERVER_HOSTNAME=${SEAFILE_SERVER_HOSTNAME:?Variable is not set or empty}
+      - SEAFILE_SERVER_PROTOCOL=${SEAFILE_SERVER_PROTOCOL:-https}
+      - SITE_ROOT=${SITE_ROOT:-/}
+      - NON_ROOT=${NON_ROOT:-false}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:?Variable is not set or empty}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-false}
+      - ENABLE_GO_FILESERVER=${ENABLE_GO_FILESERVER:-true}
+      - CACHE_PROVIDER=${CACHE_PROVIDER:-redis}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - MEMCACHED_HOST=${MEMCACHED_HOST:-memcached}
+      - MEMCACHED_PORT=${MEMCACHED_PORT:-11211}
+      - ENABLE_NOTIFICATION_SERVER=${ENABLE_NOTIFICATION_SERVER:-false}
+      - NOTIFICATION_SERVER_URL=${NOTIFICATION_SERVER_URL:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - seafile-ce-net
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.tls.certresolver=cloudflare"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.tls=true"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.rule=Host(`${SEAFILE_SERVER_HOSTNAME}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.priority=1"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.service=${APP_NAME_CE:-seafile-ce}"
+      - "traefik.http.middlewares.${APP_NAME_CE:-seafile-ce}-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.${APP_NAME_CE:-seafile-ce}.middlewares=${APP_NAME_CE:-seafile-ce}-headers"
+      - "traefik.http.services.${APP_NAME_CE:-seafile-ce}.loadbalancer.server.port=80"
+
+networks:
+  seafile-ce-net:
+    name: seafile-ce-net
+  traefik-net:
+    external: true
